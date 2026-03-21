@@ -19,35 +19,34 @@ An enterprise chatbot prototype that indexes internal documentation into Glean a
                     Glean indexes, chunks,
                     and embeds internally
                                │
-          ┌────────────────────┼────────────────────┐
-          │                    │                     │
-  ┌───────▼────────┐  ┌───────▼────────┐   ┌───────▼────────┐
-  │  CLI (main.py) │  │ MCP stdio      │   │ MCP SSE        │
-  │  ask / search  │  │ (Cursor, etc.) │   │ (HTTP clients) │
-  │  / chat        │  │                │   │                │
-  └───────┬────────┘  └───────┬────────┘   └───────┬────────┘
-          │                    │                     │
-          └────────────────────┼─────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │   GleanClient       │
-                    │   .rag_query()      │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              │                                 │
-     ┌────────▼─────────┐            ┌──────────▼──────────┐
-     │ Glean Search API │            │  Glean Chat API     │
-     │ (retrieve top-k  │            │  (grounded answer   │
-     │  documents)      │            │   generation)       │
-     └──────────────────┘            └─────────────────────┘
+          ┌────────────────────┼────────────────┐
+          │                    │                 │
+  ┌───────▼────────┐  ┌───────▼────────┐       │
+  │  CLI (main.py) │  │ MCP server     │       │
+  │  ask / search  │  │ (Claude Desktop │       │
+  │  / chat        │  │  or Cursor)    │       │
+  └───────┬────────┘  └───────┬────────┘       │
+          │                    │                 │
+          └────────────────────┘                 │
+                               │                 │
+                    ┌──────────▼──────────┐      │
+                    │   rag_query()       │      │
+                    │   glean_client.py   │      │
+                    └──────────┬──────────┘      │
+                               │                 │
+              ┌────────────────┼──────────┐      │
+              │                           │      │
+     ┌────────▼─────────┐     ┌───────────▼──────▼──┐
+     │ Glean Search API │     │  Glean Chat API     │
+     │ (ranked snippets)│     │  (grounded answer)  │
+     └──────────────────┘     └─────────────────────┘
 ```
 
 ### Flow for a single query
 
-1. **User** sends a natural-language question (via CLI, MCP tool, etc.)
-2. **GleanClient.search()** — hits the Glean Search API filtered to the `interviewds` datasource, returns ranked document snippets.
-3. **GleanClient.chat()** — sends the same question to the Glean Chat API, which performs its own internal retrieval and generates a grounded answer with citations.
+1. **User** sends a natural-language question (via CLI or MCP tool in Claude Desktop/Cursor).
+2. **glean_search()** — hits the Glean Search API filtered to the `interviewds` datasource, returns ranked document snippets.
+3. **glean_chat()** — sends the same question to the Glean Chat API, which performs its own internal retrieval and generates a grounded answer with citations.
 4. **Source merging** — citations from Chat are combined with Search results (deduplicated by doc ID) to provide comprehensive provenance.
 5. **Response** — JSON object with `answer`, `sources[]` (each with title, URL, doc_id, origin).
 
@@ -104,10 +103,23 @@ python main.py chat "What is the PTO policy for baristas?"
 python main.py ask "How do I calibrate the espresso grinder?"
 ```
 
-### MCP Server — stdio (for Cursor / Claude Desktop)
+### MCP Server (for Claude Desktop / Cursor)
 
 ```bash
 python mcp_server.py
+```
+
+Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+```json
+{
+  "mcpServers": {
+    "volta-coffee": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "cwd": "/path/to/this/project"
+    }
+  }
+}
 ```
 
 Cursor config (`.cursor/mcp.json`):
@@ -123,13 +135,7 @@ Cursor config (`.cursor/mcp.json`):
 }
 ```
 
-### MCP Server — SSE (HTTP)
-
-```bash
-python mcp_server.py --transport sse
-```
-
-Server listens on `http://localhost:8000`. Connect any MCP client to `http://localhost:8000/sse`.
+Restart the client after saving. The `ask_volta` tool will appear and can be invoked by asking any question about Volta Coffee Co.
 
 ## Assumptions
 
@@ -145,8 +151,8 @@ Server listens on `http://localhost:8000`. Connect any MCP client to `http://loc
 ```
 ├── main.py              CLI entrypoint (index / search / chat / ask)
 ├── indexer.py           Document reader + Glean Indexing API client
-├── glean_client.py      Glean Search + Chat API wrapper, RAG orchestration
-├── mcp_server.py        MCP server (stdio + SSE transports)
+├── glean_client.py      Glean Search + Chat API functions, RAG orchestration
+├── mcp_server.py        MCP server (stdio transport for Claude Desktop / Cursor)
 ├── env.txt              Configuration (tokens, instance name)
 ├── requirements.txt     Python dependencies
 ├── documents/           Volta Coffee Co. internal docs (10 markdown files)
@@ -160,5 +166,5 @@ Server listens on `http://localhost:8000`. Connect any MCP client to `http://loc
 | Using Chat API for generation instead of a custom LLM | Less control over prompting, but answers are grounded in Glean's index by default — no prompt engineering needed for citation |
 | Explicit search step alongside Chat | Redundant retrieval, but demonstrates the Search API independently and gives us controllable source references |
 | Single MCP tool (`ask_volta`) | Simpler interface for the client; could be split into `search_volta` + `chat_volta` for more granular control |
-| `top_k` as the only tunable parameter | Keeps the tool schema simple; production might add datasource filters, date ranges, or document type filters |
 | Synchronous Glean client in MCP | Simpler code; would bottleneck under concurrent requests — async client needed for production |
+| stdio-only MCP transport | Simplest setup for local clients (Claude Desktop, Cursor); SSE or Streamable HTTP would be needed for remote/multi-client access |
