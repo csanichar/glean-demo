@@ -1,0 +1,82 @@
+[
+  {
+    "id": "BREW-001",
+    "title": "Brewing Standards & Formulas",
+    "owner": "Quality Assurance Team",
+    "updated_at": "2026-02-15T00:00:00Z",
+    "tags": ["brewing", "espresso", "batch-brew", "cold-brew", "water-quality", "grinder-calibration", "extraction"],
+    "file": "01_brewing_standards.md"
+  },
+  {
+    "id": "HR-001",
+    "title": "Employee Handbook: HR Policies",
+    "owner": "People Operations",
+    "updated_at": "2026-01-10T00:00:00Z",
+    "tags": ["hr", "pto", "remote-work", "expense-reimbursement", "benefits", "anti-harassment"],
+    "file": "02_hr_policies.md"
+  },
+  {
+    "id": "ENG-001",
+    "title": "Engineering & IT Onboarding Guide",
+    "owner": "Engineering",
+    "updated_at": "2026-02-01T00:00:00Z",
+    "tags": ["engineering", "onboarding", "architecture", "infrastructure", "development", "on-call"],
+    "file": "03_engineering_onboarding.md"
+  },
+  {
+    "id": "SEC-001",
+    "title": "IT Security Policy",
+    "owner": "IT Security",
+    "updated_at": "2026-01-20T00:00:00Z",
+    "tags": ["security", "access-control", "authentication", "incident-response", "data-classification", "compliance"],
+    "file": "04_it_security.md"
+  },
+  {
+    "id": "QA-001",
+    "title": "Quality Assurance & Cupping Protocol",
+    "owner": "Quality Assurance Team",
+    "updated_at": "2026-02-10T00:00:00Z",
+    "tags": ["quality", "cupping", "green-coffee", "roast-quality", "defects", "scoring"],
+    "file": "05_quality_assurance.md"
+  },
+  {
+    "id": "MENU-001",
+    "title": "Beverage Menu & Recipes",
+    "owner": "Beverage Development",
+    "updated_at": "2026-03-01T00:00:00Z",
+    "tags": ["menu", "recipes", "espresso", "latte", "cappuccino", "pricing", "signature-beverages", "pour-over"],
+    "file": "06_beverage_menu.md"
+  },
+  {
+    "id": "TRAIN-001",
+    "title": "New Barista Training Guide",
+    "owner": "Retail Operations",
+    "updated_at": "2026-02-20T00:00:00Z",
+    "tags": ["training", "barista", "certification", "latte-art", "onboarding", "skills"],
+    "file": "07_barista_training.md"
+  },
+  {
+    "id": "OPS-001",
+    "title": "Store Operations Manual",
+    "owner": "Retail Operations",
+    "updated_at": "2026-02-25T00:00:00Z",
+    "tags": ["operations", "opening", "closing", "staffing", "inventory", "equipment", "maintenance"],
+    "file": "08_store_operations.md"
+  },
+  {
+    "id": "SRC-001",
+    "title": "Sourcing & Sustainability Program",
+    "owner": "Green Coffee Sourcing",
+    "updated_at": "2026-01-30T00:00:00Z",
+    "tags": ["sourcing", "sustainability", "direct-trade", "origins", "carbon", "waste-reduction", "community"],
+    "file": "09_sourcing_sustainability.md"
+  },
+  {
+    "id": "ORG-001",
+    "title": "Organizational Structure",
+    "owner": "People Operations",
+    "updated_at": "2026-03-01T00:00:00Z",
+    "tags": ["org-chart", "leadership", "departments", "communication", "slack-channels", "meetings"],
+    "file": "10_org_structure.md"
+  }
+]
