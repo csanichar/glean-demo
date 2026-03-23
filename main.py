@@ -60,8 +60,8 @@ def main():
         print("\n=== Answer ===")
         print(result["answer"])
         print("\n=== Sources ===")
-        for s in result["sources"]:
-            print(f"  [{s['origin']}] {s['title']}")
+        for s in result["search_results"]:
+            print(f"{s['title']}")
             if s.get("url"):
                 print(f"           {s['url']}")
         print("\n=== Raw JSON ===")

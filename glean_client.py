@@ -10,7 +10,7 @@ def glean_search(api_token, instance, query, page_size=5):
         response = client.client.search.query(
             query=query,
             page_size=page_size,
-            request_options={
+            request_options  ={
                 "datasources_filter": ["interviewds"],
                 "facet_bucket_size": 10,
             },
@@ -19,16 +19,17 @@ def glean_search(api_token, instance, query, page_size=5):
         for item in getattr(response, "results", []) or []:
             doc = getattr(item, "document", None)
 
-            snippets = getattr(item, "snippets", None) or []
+            #snippets = getattr(item, "snippets", None) or []
+            snippets = item.snippets
             snippet_text = ""
             if snippets:
                 first = snippets[0]
-                snippet_text = getattr(first, "text", "") or getattr(first, "snippet", "") or ""
+                snippet_text = first.text or first.snippet or ""
 
             results.append({
-                "title": getattr(doc, "title", "") if doc else "",
-                "url": getattr(doc, "url", "") if doc else "",
-                "doc_id": getattr(doc, "id", "") if doc else "",
+                "title": doc.title or "",
+                "url": doc.url or  "",
+                "doc_id": doc.id or "",
                 "snippet": snippet_text,
             })
 
@@ -50,21 +51,27 @@ def glean_chat(api_token, instance, question, timeout_millis=30000):
 
     # Build the answer text from the assistant's response fragments
     answer = ""
-    for msg in getattr(response, "messages", []) or []:
-        if getattr(msg, "author", "").upper() != "USER":
-            for frag in getattr(msg, "fragments", []) or []:
-                answer += getattr(frag, "text", "") or ""
+    if response.messages:
+        for msg in response.messages: 
+            if msg.author.upper() != "USER":
+                for frag in msg.fragments:
+                    if frag and frag.text: 
+                        answer += frag.text
+    else:
+        print("No messages found in the response.")
 
     # Pull out the cited source documents
     sources = []
-    for cite in getattr(response, "citations", []) or []:
-        doc = getattr(cite, "source_document", None) or getattr(cite, "document", None)
-        if doc:
-            sources.append({
-                "title": getattr(doc, "title", ""),
-                "url": getattr(doc, "url", ""),
-                "doc_id": getattr(doc, "id", ""),
-            })
+    if response.messages:
+        for msg in response.messages:
+            if msg.citations:
+                for cite in msg.citations:
+                    if cite.source_document:
+                        sources.append({
+                            "title": cite.source_document.title or "",
+                            "url": cite.source_document.url or "",
+                            "doc_id": cite.source_document.id or "",
+                        })
 
     return {"answer": answer, "sources": sources}
 
@@ -74,25 +81,9 @@ def rag_query(api_token, instance, question, top_k=5):
     search_results = glean_search(api_token, instance, question, page_size=top_k)
     chat_result = glean_chat(api_token, instance, question)
 
-    seen = set()
-    sources = []
-
-    for src in chat_result["sources"]:
-        key = src["doc_id"] or src["url"]
-        if key and key not in seen:
-            seen.add(key)
-            src["origin"] = "chat_citation"
-            sources.append(src)
-
-    for src in search_results:
-        key = src["doc_id"] or src["url"]
-        if key and key not in seen:
-            seen.add(key)
-            src["origin"] = "search"
-            sources.append(src)
 
     return {
         "question": question,
         "answer": chat_result["answer"],
-        "sources": sources,
+        "search_results": search_results,
     }
