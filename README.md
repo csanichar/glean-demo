@@ -1,54 +1,46 @@
 # Volta Coffee Co. — Glean RAG Chatbot + MCP Tool
 
-An enterprise chatbot prototype that indexes internal documentation into Glean and exposes a RAG pipeline (Search + Chat) as both a CLI tool and an MCP server.
+An enterprise chatbot prototype that indexes internal documentation into Glean and exposes a RAG-powered Q&A flow as both a CLI and an MCP tool for Claude Desktop.
 
 ## Architecture & Data Flow
 
 ```
-                  ┌──────────────────────────┐
-                  │    Volta Coffee Docs      │
-                  │    (10 markdown files)     │
-                  └────────────┬───────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  Glean Indexing API  │
-                    │  (bulk document     │
-                    │   push via SDK)     │
-                    └──────────┬──────────┘
-                               │
-                    Glean indexes, chunks,
-                    and embeds internally
-                               │
-          ┌────────────────────┼────────────────┐
-          │                    │                 │
-  ┌───────▼────────┐  ┌───────▼────────┐       │
-  │  CLI (main.py) │  │ MCP server     │       │
-  │  ask / search  │  │ (Claude Desktop │       │
-  │  / chat        │  │  or Cursor)    │       │
-  └───────┬────────┘  └───────┬────────┘       │
-          │                    │                 │
-          └────────────────────┘                 │
-                               │                 │
-                    ┌──────────▼──────────┐      │
-                    │   rag_query()       │      │
-                    │   glean_client.py   │      │
-                    └──────────┬──────────┘      │
-                               │                 │
-              ┌────────────────┼──────────┐      │
-              │                           │      │
-     ┌────────▼─────────┐     ┌───────────▼──────▼──┐
-     │ Glean Search API │     │  Glean Chat API     │
-     │ (ranked snippets)│     │  (grounded answer)  │
-     └──────────────────┘     └─────────────────────┘
+  ┌──────────────────────────┐
+  │    Volta Coffee Docs      │
+  │    (markdown files)       │
+  └────────────┬──────────────┘
+               │
+    ┌──────────▼──────────┐
+    │  Glean Indexing API  │
+    │  (document push via  │
+    │   API client)        │
+    └──────────┬──────────┘
+               │
+    Glean indexes, chunks,
+    and embeds internally
+               │
+  ┌────────────┼────────────────┐
+  │                             │
+  ▼                             ▼
+  CLI (main.py)           MCP server
+  index / search / chat   (Claude Desktop)
+  │                             │
+  └──────────┬──────────────────┘
+             │
+             ▼
+      glean_client.py
+      glean_search() → Glean Search API
+      glean_chat()   → Glean Chat API
 ```
 
-### Flow for a single query
+### How a query flows
 
-1. **User** sends a natural-language question (via CLI or MCP tool in Claude Desktop/Cursor).
-2. **glean_search()** — hits the Glean Search API filtered to the `interviewds` datasource, returns ranked document snippets.
-3. **glean_chat()** — sends the same question to the Glean Chat API, which performs its own internal retrieval and generates a grounded answer with citations.
-4. **Source merging** — citations from Chat are combined with Search results (deduplicated by doc ID) to provide comprehensive provenance.
-5. **Response** — JSON object with `answer`, `sources[]` (each with title, URL, doc_id, origin).
+1. User sends a natural-language question via the CLI or through the `ask_volta` MCP tool in Claude Desktop.
+2. `glean_chat()` sends the question to the Glean Chat API with `X-Glean-ActAs` set to the configured user email. The Chat API internally retrieves relevant documents from the index and generates a grounded answer.
+3. The response is parsed to extract the final answer (filtering out intermediate reasoning steps) and deduplicated source citations.
+4. A JSON object is returned containing the answer text and a sources array with title, URL, and document ID for each cited document.
+
+The Search API is available as a standalone CLI command (`python main.py search`) for verifying that indexed content is discoverable. The Chat API performs its own internal retrieval, so the search step serves as an independent validation tool.
 
 ## Setup
 
@@ -65,15 +57,17 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Edit `env.txt` with your credentials:
+Create an `env.txt` file with your credentials:
 
 ```
 GLEAN_INSTANCE: support-lab
 GLEAN_INDEXING_API_TOKEN: <your-indexing-token>
 GLEAN_SEARCH_API_TOKEN: <your-search-token>
+GLEAN_CLIENT_API_TOKEN: <your-client-token>
+GLEAN_ACT_AS_EMAIL: <user-email-for-impersonation>
 ```
 
-The Indexing API token is used for document ingestion. The Search API token is used for Search and Chat API calls (they share the Client API token).
+The Indexing API token is used for document ingestion. The Client API token (Global scope) is used for Search and Chat API calls, with `X-Glean-ActAs` set to the configured email for user impersonation.
 
 ## Usage
 
@@ -83,88 +77,49 @@ The Indexing API token is used for document ingestion. The Search API token is u
 python main.py index
 ```
 
-Reads all `.md` files from `documents/` and pushes them to Glean.
+Reads all `.md` files from `documents/` and pushes them to Glean via the Indexing API.
 
 ### Test search
 
 ```bash
-python main.py search "espresso extraction parameters"
+python main.py search "Which drinks at Volta are only available in 12oz?"
 ```
+
+Queries the Glean Search API filtered to the `interviewds` datasource and returns ranked document snippets.
 
 ### Test chat
 
 ```bash
-python main.py chat "What is the PTO policy for baristas?"
+python main.py chat "Who came up with the coffee menu at Volta Coffee?"
 ```
 
-### Full RAG query (search + chat)
+Sends the question to the Glean Chat API and returns a grounded answer with source citations.
 
-```bash
-python main.py ask "How do I calibrate the espresso grinder?"
-```
+### MCP Server (Claude Desktop)
 
-### MCP Server (for Claude Desktop / Cursor)
+The MCP server exposes a single tool (`ask_volta`) that accepts a natural-language question and returns a grounded answer with sources.
 
-```bash
-python mcp_server.py
-```
+Add the following to your Claude Desktop config (`claude_desktop_config.json`):
 
-Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 ```json
 {
   "mcpServers": {
     "volta-coffee": {
       "command": "python",
       "args": ["mcp_server.py"],
-      "cwd": "/path/to/this/project"
+      "cwd": "<PATH_TO_DIR>"
     }
   }
 }
 ```
 
-Cursor config (`.cursor/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "volta-coffee": {
-      "command": "python",
-      "args": ["mcp_server.py"],
-      "cwd": "/path/to/this/project"
-    }
-  }
-}
-```
+Restart Claude Desktop after saving. The `ask_volta` tool will appear and can be invoked by asking any question about Volta Coffee Co.
 
-Restart the client after saving. The `ask_volta` tool will appear and can be invoked by asking any question about Volta Coffee Co.
+## Assumptions & Tradeoffs
 
-## Assumptions
+**Flat permissions model.** All documents are indexed with `allow_anonymous_access=True`. In production, the Indexing API's `DocumentPermissionsDefinition` would map to the customer's identity provider, enforcing per-document ACLs. Combined with the Global token's `X-Glean-ActAs` impersonation, this ensures search results and chat answers respect the authenticated user's permissions — the standard architecture for a server-side chatbot where a single service account handles requests on behalf of multiple users.
 
-1. **Single datasource**: All documents target the `interviewds` datasource. In production, you'd use multiple datasources or object types to model different content categories.
-2. **Flat permissions**: Documents are indexed with `allow_anonymous_access=True`. A real deployment would map to the customer's identity provider and enforce per-document ACLs.
-3. **Chat API does its own retrieval**: The Glean Chat API performs internal search — we don't pass our Search results to it as context. The explicit Search step is included because the exercise requires using all three APIs, and it gives us deterministic source references we control.
-4. **No chunking logic**: Glean handles chunking and embedding internally. We push full document bodies. This is a feature of Glean's managed pipeline, not an omission.
-5. **env.txt for secrets**: Acceptable for a prototype. Production would use environment variables or a secrets manager.
-6. **Synchronous SDK calls**: The Glean Python SDK supports async, but the MCP FastMCP `@mcp.tool()` decorator works with sync functions. For a production MCP server under load, you'd use the async client.
+**Chat API handles retrieval internally.** The Glean Chat API performs its own search and retrieval before generating an answer. The explicit Search API call in the CLI is not passed as context to the Chat API — it exists to independently verify that documents are indexed and discoverable, and to demonstrate the Search API as a standalone capability. This means there are effectively two retrieval paths, which is redundant but intentional given the exercise requirement to use all three APIs.
 
-## File Structure
+**Chain-of-thought filtering.** The Chat API returns intermediate reasoning steps (tool searches, document reads, drafting notes) alongside the final answer. Only the last assistant message is extracted to produce a clean response. This is brittle — if Glean changes the response structure, the filtering logic would need to be updated.
 
-```
-├── main.py              CLI entrypoint (index / search / chat / ask)
-├── indexer.py           Document reader + Glean Indexing API client
-├── glean_client.py      Glean Search + Chat API functions, RAG orchestration
-├── mcp_server.py        MCP server (stdio transport for Claude Desktop / Cursor)
-├── env.txt              Configuration (tokens, instance name)
-├── requirements.txt     Python dependencies
-├── documents/           Volta Coffee Co. internal docs (10 markdown files)
-└── README.md            This file
-```
-
-## Key Tradeoffs & Limitations
-
-| Decision | Tradeoff |
-|----------|----------|
-| Using Chat API for generation instead of a custom LLM | Less control over prompting, but answers are grounded in Glean's index by default — no prompt engineering needed for citation |
-| Explicit search step alongside Chat | Redundant retrieval, but demonstrates the Search API independently and gives us controllable source references |
-| Single MCP tool (`ask_volta`) | Simpler interface for the client; could be split into `search_volta` + `chat_volta` for more granular control |
-| Synchronous Glean client in MCP | Simpler code; would bottleneck under concurrent requests — async client needed for production |
-| stdio-only MCP transport | Simplest setup for local clients (Claude Desktop, Cursor); SSE or Streamable HTTP would be needed for remote/multi-client access |

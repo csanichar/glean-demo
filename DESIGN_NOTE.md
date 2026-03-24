@@ -1,0 +1,31 @@
+# Design Note — Volta Coffee Co. Chatbot
+
+## API Usage
+
+**Indexing API.** Local markdown files are read from a `documents/` folder, and each file is pushed to Glean as a `DocumentDefinition` with a datasource of `interviewds`, an object type of `KnowledgeArticle`, and the full document body as plain text. Titles are extracted from the first markdown heading. Each document is assigned a `view_url` that points back to the Glean-hosted knowledge base page, so citations in the chat response link to a browsable location. Permissions are set to `allow_anonymous_access=True` for the prototype. Glean handles all chunking, embedding, and vector storage internally after ingestion — no client-side chunking or embedding logic is needed.
+
+**Search API.** The Search API is called with the user's query filtered to the `interviewds` datasource. It returns ranked document results with snippets. In the prototype, this is exposed as a standalone CLI command (`python main.py search`) for verifying that indexed documents are discoverable and that Glean's retrieval is returning relevant results. The Search API is not called as a precursor to the Chat API — the Chat API performs its own internal retrieval. The Search API serves as an independent validation layer.
+
+**Chat API.** The Chat API receives the user's question and generates a grounded answer by internally retrieving relevant documents from the index, reasoning over them, and producing a response with inline citations. The API uses an agentic pattern: it performs tool calls (searches, document reads) as intermediate steps before producing a final answer. The full response includes these intermediate reasoning messages alongside the final output.
+
+## End-to-End Flow
+
+**Ingest.** `python main.py index` reads markdown files, constructs `DocumentDefinition` objects via the Glean API client, and pushes them in a single batch call to the Indexing API. Documents appear in Glean's search index within minutes.
+
+**Retrieve.** When a user asks a question — via the CLI or the MCP tool — the question is sent to the Glean Chat API. The Chat API internally queries the search index, retrieves relevant document chunks, and uses them as context for generation. The Search API is available separately for manual verification.
+
+**Generate.** The Chat API returns a multi-message response. Intermediate messages contain reasoning steps (tool invocations, search results, drafting notes). The final assistant message contains the grounded answer. The code iterates through the response messages and extracts only the last assistant message, discarding intermediate reasoning.
+
+**Return answer + sources.** Source citations are extracted by iterating over all assistant message fragments and pulling `citation.source_document` objects where present. Documents are deduplicated by ID. The final output is a JSON object with an `answer` string and a `sources` array, each entry containing the document title, URL, and ID.
+
+**MCP tool.** The `ask_volta` tool is registered via FastMCP with stdio transport. Claude Desktop invokes it with a natural-language question. The tool calls `glean_chat()`, which handles the Chat API interaction, response parsing, and citation extraction. The JSON result is returned to Claude Desktop, which presents the answer and sources to the user. The tool's docstring instructs Claude to always display both the answer and the source list.
+
+## Key Tradeoffs
+
+**Authentication model.** The sandbox provides a Global-scoped Client API token, which requires an `X-Glean-ActAs` header to identify the user on each request. This is the correct production pattern for a server-side chatbot: a single service account impersonates end users, and Glean enforces per-user document permissions on the results. In the prototype, the act-as email is hardcoded in `env.txt`. In production, it would be populated from the authenticated user's session. The alternative — per-user API tokens — would eliminate the need for impersonation but requires each user to manage their own credentials, which doesn't scale for a centralized chatbot service.
+
+**No explicit search-then-chat orchestration.** The Chat API performs its own retrieval internally. A more controlled architecture would call the Search API first, select and rank the results, then pass them as context to a standalone LLM for generation. This would give full control over what context the model sees and allow for custom reranking, filtering, or relevance thresholds. The tradeoff is that the Chat API's integrated approach is simpler to implement and leverages Glean's full ranking stack (knowledge graph, activity signals, permission filtering) without reimplementing it. For a prototype, the integrated path is the right choice. For production with strict grounding requirements, the explicit orchestration path gives more control.
+
+**Chain-of-thought filtering.** The Chat API's agentic response format returns intermediate reasoning alongside the final answer. Extracting only the last assistant message is a heuristic that works today but is coupled to Glean's current response structure. If the API changes how it sequences messages — for example, splitting the final answer across multiple messages or nesting citations differently — the extraction logic would break. A more robust approach would be to use a structured response flag if Glean exposes one, or to implement a more defensive parser that identifies the final answer by content heuristics rather than position.
+
+**Permissions as a production concern.** The prototype uses `allow_anonymous_access=True`, meaning any authenticated user can see all indexed documents. In a real deployment, the Indexing API's `DocumentPermissionsDefinition` supports fine-grained access control: `allowed_users`, `allowed_groups`, and `allowed_datasource_groups` can restrict each document to specific users or teams. Combined with `X-Glean-ActAs`, this means the Chat API would only retrieve and cite documents the impersonated user has access to — permission enforcement happens at the retrieval layer, not the application layer. This is a significant architectural advantage of using Glean's managed pipeline over a custom RAG system where permission filtering would need to be implemented manually.
